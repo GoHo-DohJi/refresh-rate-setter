@@ -45,11 +45,11 @@ std::map<int, int> ParseDisplayArgs(int argc, wchar_t* argv[], bool& force) {
             continue;
         }
 
-        if (arg.rfind(L"-D", 0) == 0) {
+        if (arg.rfind(L"--D", 0) == 0) {
             size_t eq = arg.find(L'=');
             if (eq == std::wstring::npos) continue;
 
-            int displayIndex = std::stoi(arg.substr(2, eq - 2));
+            int displayIndex = std::stoi(arg.substr(3, eq - 3));
             int hz = std::stoi(arg.substr(eq + 1));
             result[displayIndex] = hz;
         }
@@ -84,7 +84,7 @@ int wmain(int argc, wchar_t* argv[]) {
     if (targets.empty()) {
         std::wcout << L"No Displays Specified!\n"
                    << L"Usage:\n"
-                   << L"DisplayRefreshRateSetter.exe -D1=240 [-D2=144] [--force]\n";
+                   << L"refresh-rate-setter.exe --D1=240 [--D2=144] [--force]\n";
         return 1;
     }
 
@@ -137,7 +137,7 @@ int wmain(int argc, wchar_t* argv[]) {
         ApplyMode(state.deviceName, state.originalMode);
     }
 
-    std::wcout << L"All Displays Restored\n";
+    std::wcout << L"All Displays ReStored\n";
     return 0;
 
 }
