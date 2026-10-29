@@ -76,7 +76,7 @@ foreach ($index in ($targets.Keys | Sort-Object)) {
     $hz     = $targets[$index]
     $device = "\\.\DISPLAY$index"
     $mode   = New-Object DEVMODE
-    $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf([DEVMODE])
+    $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mode)
 
     if (-not [Display]::EnumDisplaySettingsW($device, [Display]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
         Write-Host "Failed to read current mode for $device"
