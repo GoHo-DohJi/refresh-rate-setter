@@ -5,9 +5,8 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $argList" -Verb RunAs
     } else {
         Write-Host "Run PowerShell as Administrator first." -ForegroundColor Red
-        exit 1
     }
-    exit
+    return
 }
 
 # P/Invoke #
@@ -66,7 +65,7 @@ foreach ($a in $args) {
 
 if ($targets.Count -eq 0) {
     Write-Host "Usage: script.ps1 -D1=240 [-D2=144] [-f]"
-    exit 1
+    return
 }
 
 # Apply Refresh Rates #
@@ -98,12 +97,12 @@ foreach ($index in ($targets.Keys | Sort-Object)) {
 
 if ($states.Count -eq 0) {
     Write-Host "No changes applied."
-    exit 1
+    return
 }
 
 if ($force) {
     Write-Host "Force flag set. Changes kept."
-    exit 0
+    return
 }
 
 # Confirm or Revert #
