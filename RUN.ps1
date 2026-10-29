@@ -10,8 +10,9 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 }
 
 # P/Invoke #
-try { [Display] | Out-Null } catch {
+try { [RR.Display] | Out-Null } catch {
     Add-Type -TypeDefinition @"
+namespace RR {
 using System;
 using System.Runtime.InteropServices;
 
@@ -48,45 +49,104 @@ public class Display {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int ChangeDisplaySettingsExW(string lpszDeviceName, ref DEVMODE lpDevMode, IntPtr hwnd, int dwflags, IntPtr lParam);
 }
+}
 "@
 }
 
 # Parse Arguments #
 $targets = @{}
 $force = $false
+$list  = $false
 
 foreach ($a in $args) {
     if ($a -match "^-{1,2}f(orce)?$") {
         $force = $true
+    } elseif ($a -match "^-{1,2}l(ist)?$") {
+        $list = $true
     } elseif ($a -match "^-{1,2}D(\d+)=(\d+)$") {
         $targets[[int]$Matches[1]] = [int]$Matches[2]
     }
 }
 
-if ($targets.Count -eq 0) {
-    Write-Host "Usage: script.ps1 -D1=240 [-D2=144] [-f]"
+# List Mode #
+if ($list) {
+    $adapters = @((Get-CimInstance -ClassName "Win32_VideoController").Name)
+    $index = 1
+    while ($index -le 10) {
+        $device  = "\\.\DISPLAY$index"
+        $current = New-Object RR.DEVMODE
+        $current.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($current)
+
+        if (-not [RR.Display]::EnumDisplaySettingsW($device, [RR.Display]::ENUM_CURRENT_SETTINGS, [ref]$current)) {
+            $index++
+            continue
+        }
+        if ($current.dmPelsWidth -eq 0) {
+            $index++
+            continue
+        }
+
+        $adapterName = if ($index -le $adapters.Count) { $adapters[$index - 1] } else { $adapters[0] }
+
+        Write-Host ""
+        Write-Host "=== DISPLAY$index ===" -ForegroundColor Cyan
+        Write-Host "Adapter:  $adapterName"
+        Write-Host "Current:  $($current.dmPelsWidth)x$($current.dmPelsHeight) @ $($current.dmDisplayFrequency) Hz ($($current.dmBitsPerPel)-bit)"
+        Write-Host "Available:" -ForegroundColor Yellow
+
+        $modes = @()
+        $i = 0
+        while ($true) {
+            $m = New-Object RR.DEVMODE
+            $m.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($m)
+            if (-not [RR.Display]::EnumDisplaySettingsW($device, $i, [ref]$m)) { break }
+            $modes += [PSCustomObject]@{
+                Width  = $m.dmPelsWidth
+                Height = $m.dmPelsHeight
+                Hz     = $m.dmDisplayFrequency
+                Bits   = $m.dmBitsPerPel
+            }
+            $i++
+        }
+
+        $modes |
+            Sort-Object -Property Width, Height, Hz, Bits -Unique |
+            Group-Object -Property Width, Height |
+            ForEach-Object {
+                $res   = "$($_.Group[0].Width)x$($_.Group[0].Height)"
+                $rates = ($_.Group.Hz | Sort-Object -Unique) -join ", "
+                "  {0,-12} -> {1} Hz" -f $res, $rates
+            }
+
+        $index++
+    }
     return
 }
 
-# Apply Refresh Rates #
+# Apply Mode #
+if ($targets.Count -eq 0) {
+    Write-Host "Usage: script.ps1 -D1=240 [-D2=144] [-f] [-l]"
+    return
+}
+
 $states = @()
 
 foreach ($index in ($targets.Keys | Sort-Object)) {
     $hz     = $targets[$index]
     $device = "\\.\DISPLAY$index"
-    $mode   = New-Object DEVMODE
+    $mode   = New-Object RR.DEVMODE
     $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mode)
 
-    if (-not [Display]::EnumDisplaySettingsW($device, [Display]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
+    if (-not [RR.Display]::EnumDisplaySettingsW($device, [RR.Display]::ENUM_CURRENT_SETTINGS, [ref]$mode)) {
         Write-Host "Failed to read current mode for $device"
         continue
     }
 
     $original = $mode
-    $mode.dmFields = [Display]::DM_DISPLAYFREQUENCY
+    $mode.dmFields = [RR.Display]::DM_DISPLAYFREQUENCY
     $mode.dmDisplayFrequency = $hz
 
-    if ([Display]::ChangeDisplaySettingsExW($device, [ref]$mode, [IntPtr]::Zero, [Display]::CDS_UPDATEREGISTRY, [IntPtr]::Zero) -ne [Display]::DISP_CHANGE_SUCCESSFUL) {
+    if ([RR.Display]::ChangeDisplaySettingsExW($device, [ref]$mode, [IntPtr]::Zero, [RR.Display]::CDS_UPDATEREGISTRY, [IntPtr]::Zero) -ne [RR.Display]::DISP_CHANGE_SUCCESSFUL) {
         Write-Host "Failed to apply $hz Hz to $device"
         continue
     }
@@ -106,9 +166,9 @@ if ($force) {
 }
 
 # Confirm or Revert #
-Write-Host "`nKeep changes? Press ENTER within 5 seconds..."
+Write-Host "`nKeep changes? Press ENTER within 10 seconds..."
 $confirmed = $false
-$deadline  = (Get-Date).AddSeconds(5)
+$deadline  = (Get-Date).AddSeconds(10)
 
 while ((Get-Date) -lt $deadline) {
     if ([Console]::KeyAvailable) {
@@ -124,7 +184,7 @@ if ($confirmed) {
 } else {
     Write-Host "Reverting changes..."
     foreach ($state in $states) {
-        [Display]::ChangeDisplaySettingsExW($state.Device, [ref]$state.Mode, [IntPtr]::Zero, [Display]::CDS_UPDATEREGISTRY, [IntPtr]::Zero) | Out-Null
+        [RR.Display]::ChangeDisplaySettingsExW($state.Device, [ref]$state.Mode, [IntPtr]::Zero, [RR.Display]::CDS_UPDATEREGISTRY, [IntPtr]::Zero) | Out-Null
     }
     Write-Host "All displays restored."
 }
